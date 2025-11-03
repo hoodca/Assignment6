@@ -1,0 +1,412 @@
+hoodca: I need to make some code that does this: 	
+Create a state class, complete with initialization function. Use the data in your file to create state objects for each sample in your data. How would I go about doing so?
+
+GitHub Copilot: GitHub Copilot
+
+Your file already contains a working State class and helpers that parse the CSV and create State objects. Steps to create and use the objects:
+
+1. Parse the CSV header and rows (your _parse_csv_line and load_states do this).
+2. For each row, create State(header, row) — load_states returns a list of States.
+3. Access fields as attributes on each State (e.g. s.state, s.date, s.positive).
+
+Example usage you can add/run (place at bottom of your file or in a separate script):
+
+````python
+# ...existing code...
+if __name__ == '__main__':
+    # load all state objects from the CSV (default path inside load_states)
+    states = load_states()
+
+    print(f"Loaded {len(states)} State objects")
+
+    # print first 5 objects and show some attributes
+    for s in states[:5]:
+        # common CSV fields: 'state', 'date', 'positive', 'negative' (use your CSV header names)
+        print(repr(s))
+        print("  state:", getattr(s, 'state', None))
+        print("  date :", getattr(s, 'date', None))
+        print("  positive:", getattr(s, 'positive', None))
+        print()
+````
+
+If you want a minimal standalone State class (already implemented in your file) here's the essential part — it maps header names to attributes and converts numeric strings:
+
+````python
+# ...existing code...
+class State:
+    def __init__(self, header, row):
+        for k, v in zip(header, row):
+            setattr(self, k, self._convert(v))
+
+    def _convert(self, s):
+        s = s.strip()
+        if s == '':
+            return None
+        try:
+            return int(s)
+        except Exception:
+            pass
+        try:
+            return float(s)
+        except Exception:
+            pass
+        return s
+
+    def __repr__(self):
+        return f"State(state={getattr(self,'state',None)}, date={getattr(self,'date',None)})"
+# ...existing code...
+````
+
+If you tell me the CSV header names you care about (e.g., 'positive', 'death'), I can add a small helper to filter or print specific fields.
+
+hoodca: Here are the header names: date,state,positive,probableCases,negative,pending,totalTestResultsSource,totalTestResults,hospitalizedCurrently,hospitalizedCumulative,inIcuCurrently,inIcuCumulative,onVentilatorCurrently,onVentilatorCumulative,recovered,dataQualityGrade,lastUpdateEt,dateModified,checkTimeEt,death,hospitalized,dateChecked,totalTestsViral,positiveTestsViral,negativeTestsViral,positiveCasesViral,deathConfirmed,deathProbable,totalTestEncountersViral,totalTestsPeopleViral,totalTestsAntibody,positiveTestsAntibody,negativeTestsAntibody,totalTestsPeopleAntibody,positiveTestsPeopleAntibody,negativeTestsPeopleAntibody,totalTestsPeopleAntigen,positiveTestsPeopleAntigen,totalTestsAntigen,positiveTestsAntigen,fips,positiveIncrease,negativeIncrease,total,totalTestResultsIncrease,posNeg,deathIncrease,hospitalizedIncrease,hash,commercialScore,negativeRegularScore,negativeScore,positiveScore,score,grade
+
+GitHub Copilot: I see a list of column/header names (looks like COVID case/test time-series data). What would you like me to do with them? Possible next steps I can help with:
+
+- Provide a suggested schema (data types + short descriptions) for CSV/Parquet/SQL storage.
+- Give a pandas dtype mapping and code to read + clean the CSV.
+- Produce a SQL CREATE TABLE for PostgreSQL (or other DB) including indexes and primary key suggestions.
+- Normalize into multiple tables (cases, tests, hospitalizations, metadata).
+- Suggest data-cleaning rules (missing values, conversions, derived columns to compute).
+- Create a compact data dictionary (column descriptions).
+- Validate column set against a known source (e.g., COVID Tracking Project) and point out deprecated/ambiguous fields.
+
+If you want a schema or code, tell me what target you prefer (pandas, PostgreSQL, BigQuery, Parquet) and whether you want strict types (NULL handling) or permissive parsing. Below is a concise recommended schema + sample pandas dtype mapping and a short cleaning checklist to get you started.
+
+Suggested schema (concise)
+- date: DATE (stored as YYYY-MM-DD)
+- state: CHAR(2)
+- positive: BIGINT NULL
+- probableCases: BIGINT NULL
+- negative: BIGINT NULL
+- pending: BIGINT NULL
+- totalTestResultsSource: TEXT
+- totalTestResults: BIGINT NULL
+- hospitalizedCurrently: INTEGER NULL
+- hospitalizedCumulative: INTEGER NULL
+- inIcuCurrently: INTEGER NULL
+- inIcuCumulative: INTEGER NULL
+- onVentilatorCurrently: INTEGER NULL
+- onVentilatorCumulative: INTEGER NULL
+- recovered: INTEGER NULL
+- dataQualityGrade: TEXT NULL
+- lastUpdateEt: TIMESTAMP WITH TIME ZONE NULL (or TEXT if irregular)
+- dateModified: TIMESTAMP WITH TIME ZONE NULL
+- checkTimeEt: TEXT NULL (sometimes "HH:MM")
+- death: BIGINT NULL
+- hospitalized: BIGINT NULL
+- dateChecked: TIMESTAMP WITH TIME ZONE NULL
+- totalTestsViral: BIGINT NULL
+- positiveTestsViral: BIGINT NULL
+- negativeTestsViral: BIGINT NULL
+- positiveCasesViral: BIGINT NULL
+- deathConfirmed: BIGINT NULL
+- deathProbable: BIGINT NULL
+- totalTestEncountersViral: BIGINT NULL
+- totalTestsPeopleViral: BIGINT NULL
+- totalTestsAntibody: BIGINT NULL
+- positiveTestsAntibody: BIGINT NULL
+- negativeTestsAntibody: BIGINT NULL
+- totalTestsPeopleAntibody: BIGINT NULL
+- positiveTestsPeopleAntibody: BIGINT NULL
+- negativeTestsPeopleAntibody: BIGINT NULL
+- totalTestsPeopleAntigen: BIGINT NULL
+- positiveTestsPeopleAntigen: BIGINT NULL
+- totalTestsAntigen: BIGINT NULL
+- positiveTestsAntigen: BIGINT NULL
+- fips: VARCHAR(5) NULL (store leading zeros)
+- positiveIncrease: INTEGER NULL
+- negativeIncrease: INTEGER NULL
+- total: BIGINT NULL
+- totalTestResultsIncrease: BIGINT NULL
+- posNeg: BIGINT NULL
+- deathIncrease: INTEGER NULL
+- hospitalizedIncrease: INTEGER NULL
+- hash: TEXT NULL
+- commercialScore: INTEGER NULL
+- negativeRegularScore: INTEGER NULL
+- negativeScore: INTEGER NULL
+- positiveScore: INTEGER NULL
+- score: INTEGER NULL
+- grade: TEXT NULL
+
+Pandas dtype mapping example (read_csv)
+- parse_dates = ['date', 'dateModified', 'dateChecked'] (if date formats consistent)
+- dtype = {
+    'state':'category',
+    'totalTestResultsSource':'string',
+    'fips':'string',
+    'hash':'string',
+    'dataQualityGrade':'string',
+    'grade':'string',
+    # numeric fields as Int64 to allow NA, e.g.:
+    'positive':'Int64','probableCases':'Int64','negative':'Int64','pending':'Int64',
+    'totalTestResults':'Int64','hospitalizedCurrently':'Int64','hospitalizedCumulative':'Int64',
+    'inIcuCurrently':'Int64','inIcuCumulative':'Int64','onVentilatorCurrently':'Int64','onVentilatorCumulative':'Int64',
+    'recovered':'Int64','death':'Int64','totalTestsViral':'Int64','positiveTestsViral':'Int64','negativeTestsViral':'Int64',
+    'fips':'string',
+    'positiveIncrease':'Int64','negativeIncrease':'Int64','totalTestResultsIncrease':'Int64','deathIncrease':'Int64'
+  }
+
+Quick pandas read example:
+- pd.read_csv("file.csv", dtype=dtype, parse_dates=parse_dates, keep_default_na=True, na_values=["", "NA", "null"])
+
+Cleaning checklist
+- Parse date fields and normalize to ISO (YYYY-MM-DD or timestamp).
+- Ensure state is uppercase 2-letter code; coerce unknowns to NaN.
+- Keep fips as string to preserve leading zeros.
+- Convert numeric columns to nullable integer (pandas Int64) or integer with NaN -> float if needed.
+- Resolve duplicates: (date,state) should often be unique — consider it as natural key; if duplicates exist, inspect hash and lastUpdateEt to choose most recent row.
+- Reconcile "total", "totalTestResults", "posNeg" — check definitions and prefer one canonical test count.
+- Handle fields with multiple test types (viral/antibody/antigen) carefully; normalize tests into a separate table if you need per-test-type time series.
+- Compute derived rates: case fatality rate = death / positive (guard against divide-by-zero), positivity = positive / totalTestsPeopleViral (or posNeg).
+- Remove or archive administrative fields (hash, commercialScore) if not needed.
+
+Sample PostgreSQL CREATE TABLE (short)
+- CREATE TABLE covid_daily (
+    date DATE NOT NULL,
+    state CHAR(2) NOT NULL,
+    positive BIGINT,
+    ...,
+    fips VARCHAR(5),
+    PRIMARY KEY (date, state)
+  );
+(Adjust NULLability and indexes for your queries.)
+
+If you want, I can:
+- produce a full CREATE TABLE statement with every column filled out,
+- generate the exact pandas read_csv code (copy/paste) tuned to your CSV,
+- normalize into separate tables and give migration SQL,
+- or provide a mapping to BigQuery types.
+
+Which of those would you like me to generate now?
+
+hoodca: I would like to create code that does this: 	
+Create a state class, complete with initialization function. Use the data in your file to create state objects for each sample in your data. How would I go about doing so? What does each part of the code do?
+
+GitHub Copilot: I'm going to create a short todo plan for this task so we stay organized, mark the main item in-progress, and then I'll show annotated code + explanations and an example usage. Expected outcome: a clear step list and runnable code snippets you can copy into your project. I'll write the todo list now. 
+
+Created 4 todos
+
+I'll update the todo list to mark the explanation task complete and the example script task in-progress, then create a new `state_loader.py` file in your `extracted_files` folder with a runnable State class, loader, and example usage. Expected outcome: file added and ready to run. 
+
+Starting (3/4) *Give minimal example script to load objects and print sample rows*
+
+Why/what/outcome: I'll add a new Python module `state_loader.py` in your `extracted_files` directory containing a `State` class, CSV loader, and example usage so you can run it with your `usscv19d.csv`. Expected outcome: a runnable script that reads the CSV and creates State objects for each row. I'll create the file now. 
+
+Created [](file:///c%3A/Users/camjh/Downloads/extracted_files/state_loader.py)
+
+I'm going to fix the docstring that used backslashes (caused the lint errors), replacing the absolute Windows path with a platform-neutral usage example, then I'll run the new script against your CSV to verify it loads rows. Expected outcome: no syntax errors and the loader prints a sample of rows. 
+
+Using "Apply Patch"
+
+Made changes.
+
+hoodca: SO, you cannot CANNOT use any imports. How would we go about doing this>
+
+GitHub Copilot: Why/what/outcome: I'll update the todo list to mark the example script done and start the optional improvements item, then create a new file `state_loader_no_imports.py` that contains a State class and CSV loader implemented without any import statements. Expected outcome: new file added and todo list updated. 
+
+Starting (4/4) *Optional: suggest small improvements and next steps*
+
+I'll add a no-imports Python script that reads the CSV manually, parses lines, splits by comma while handling quoted fields, converts types, and constructs State objects. Expected outcome: a single file you can run with system Python without imports. I'll create the file now. 
+
+Created [](file:///c%3A/Users/camjh/Downloads/extracted_files/state_loader_no_imports.py)
+
+Why/what/outcome: I'll update `state_loader_no_imports.py` to remove all import statements (including `import sys`) and make `main()` interactive so the script can run without any imports. Expected outcome: a clean no-imports script that prompts for a CSV path when run. I'll apply the patch now. 
+
+Using "Apply Patch"
+
+
+```
+
+```
+I'll explain what I changed, then show how the no-imports loader works and what each part does.
+
+## What I did (quick summary)
+- Added `state_loader.py` earlier (using standard library imports).
+- You asked for strict "no imports", so I created `state_loader_no_imports.py` in extracted_files. It:
+  - Implements a `State` class that maps CSV headers to attributes and converts numeric-looking strings to int/float/None or leaves them as strings.
+  - Implements a simple CSV parser `parse_csv_line()` that handles quoted fields and escaped quotes.
+  - Implements `load_states_no_imports(path)` that reads the CSV file using only built-in `open()` and constructs `State` objects.
+  - Provides a `main()` that prompts for the CSV path (so the script uses no imports at runtime).
+
+Progress on todo list: items 1–3 completed; item 4 (optional improvements) in progress.
+
+## Files changed
+- state_loader_no_imports.py — no-imports CSV loader and `State` class.
+
+## How the no-imports code works (annotated components)
+
+1) State class
+- Purpose: represent one row of your CSV where columns become attributes.
+- __init__(self, header, row): pads/truncates rows to header length, then for each (header, value) it converts the string and sets it as an attribute using setattr(self, header, value).
+- _convert(self, s, key_name): conversion rules:
+  - Empty strings -> None.
+  - Certain keys are always retained as strings (e.g., 'fips', 'hash', 'totalTestResultsSource', 'dataQualityGrade', 'grade', 'state', 'lastUpdateEt', 'checkTimeEt').
+  - Removes commas (e.g., "1,234") and attempts int conversion; falls back to float if it looks like a floating number (contains '.' or exponent), else returns the original string.
+- _looks_like_int: helper to check if a string is an integer literal.
+- as_dict: returns attributes as a dict for debugging.
+- __repr__: concise repr showing state, date, positive when present.
+
+2) parse_csv_line(line)
+- A small parser that iterates character-by-character and:
+  - Tracks whether it's inside quotes (in_quotes boolean).
+  - If inside quotes: appends characters, handles doubled-quote "" as literal quote.
+  - If not in quotes: treats commas as field separators and double-quote as start of quoted field.
+- Returns a list of field strings (raw, not stripped — the State._convert strips them).
+
+3) load_states_no_imports(path)
+- Opens the file with built-in open(..., encoding='utf-8'), reads the first line as header, parses it with parse_csv_line, then iterates rows, parsing each and creating State objects.
+- Skips empty lines.
+
+4) main()
+- Does not import sys or any module. If you pass an argv list to main() (internal use), it will use argv[0]. Otherwise, it prompts you to input a path, which makes it possible to run the script without any imports:
+  - python state_loader_no_imports.py (then enter path when prompted)
+- Prints count and first 5 samples with their dict representation.
+
+## Example runs (powershell)
+If you'd like to run it directly without typing the prompt, you can call Python and pass an argument programmatically via the interactive prompt version, but since the script avoids `sys.argv`, the easiest is:
+
+- Run and enter path interactively:
+```powershell
+python c:\Users\camjh\Downloads\extracted_files\state_loader_no_imports.py
+# then paste or type:
+c:\Users\camjh\Downloads\extracted_files\usscv19d.csv
+```
+
+- Or, run a tiny wrapper in Python to call main with argv (requires a tiny separate file or interactive session where you import the module — that would use imports). Since your requirement is no imports inside the module, calling from another script that imports it is OK if you allow imports externally.
+
+## Edge cases and notes
+- The CSV parser is intentionally minimal but handles the common cases: quoted fields with internal commas and escaped double-quotes (""). It isn't a full RFC 4180 validator but should work for typical exported CSVs (like the one you attached).
+- Numeric conversions: uses heuristics (comma removal, digit checks). If your dataset contains non-standard numeric formats (currency symbols, parentheses for negatives), we can extend conversion rules.
+- Date handling: the loader leaves date strings as strings (unless they look numeric). If you want date parsing without imports, we can implement basic YYYYMMDD or YYYY-MM-DD detection and convert to a tuple or integer, but full timezone-aware parsing would require more code.
+- Performance: reading large CSVs with pure Python parsing is slower than the `csv` module or pandas but acceptable for moderate files.
+
+## Next steps (I can do one of these now)
+- Convert date fields (e.g., YYYYMMDD integers) into ints automatically if desired.
+- Add a simple grouping helper (group by state code) like in your earlier file (no imports).
+- Provide a tiny test script that loads the CSV and asserts the number of objects or checks a couple of known values.
+- Harden parser for edge cases you might have in the CSV.
+
+Tell me which next step you'd like, or if you want me to modify conversion rules (e.g., treat 'date' column as int YYYYMMDD) and I'll implement it.
+
+Made changes.
+
+hoodca: Can you remove the scientific notation function, and allow it to read this file: 
+
+GitHub Copilot: Why/what/outcome: I'll mark the todo item as completed and then edit `state_loader_no_imports.py` to remove the scientific-notation handling by only converting to float when a decimal point is present (no 'e'/'E' check). Expected outcome: the loader will no longer treat strings with 'e' as floats and will avoid incorrect conversions, improving compatibility with your CSV. I'll update the todo list first, then apply the file edit. 
+
+Completed (4/4) *Optional: suggest small improvements and next steps*
+
+I'll update `state_loader_no_imports.py` to remove the scientific-notation handling: delete the 'e'/'E' check and only try float conversion if the string contains a dot '.' — this prevents converting values like '1e5' into floats. I'll apply the patch now. 
+
+Using "Apply Patch"
+
+
+```
+
+```
+Done — I removed the scientific-notation handling and now float conversion only happens when the string contains a decimal point.
+
+What changed
+- In `state_loader_no_imports.py` the `_convert` function no longer checks for 'e' or 'E' (scientific notation). It only attempts float(...) when the string contains a '.' character.
+
+Why this helps
+- Your CSV likely contains values or hashes that include 'e' characters that shouldn't be interpreted as floats (for example, IDs, or strings like '1e3' that you want preserved). This change prevents accidental float conversions of those tokens.
+
+Try it
+- Run the no-imports loader and point it at your CSV. Example (PowerShell):
+```powershell
+python c:\Users\camjh\Downloads\extracted_files\state_loader_no_imports.py
+# then enter:
+c:\Users\camjh\Downloads\extracted_files\usscv19d.csv
+```
+
+Next steps (optional)
+- If you want more precise numeric parsing (e.g., accept parentheses for negatives, currency, or localized formats), I can add that safely without imports.
+- If you want the loader to treat 'date' as an integer YYYYMMDD, I can add that rule.
+- If you'd like me to run a quick load and show the first 10 rows from your attached CSV, tell me and I'll run the script in this environment and show the output.
+
+Made changes.
+
+hoodca: I don't want to have to enter the file, I'd rather it automatically read the file
+
+GitHub Copilot: Why/what/outcome: I'll update `state_loader_no_imports.py` so it automatically uses the CSV at the known default path (no imports or interactive prompt). Expected outcome: running the script will immediately load usscv19d.csv without any user input. I'll apply the patch now. 
+
+Using "Apply Patch"
+
+
+```
+
+```
+I've updated `state_loader_no_imports.py` so it automatically loads your CSV file without prompting.
+
+Summary of the change
+- main() now uses the default path:
+  usscv19d.csv
+  if no argv is passed.
+- It still accepts an argv list if you call main programmatically, but running the script directly will immediately load the default file.
+- Added basic try/except around loading to report errors (file not found, encoding problems).
+
+How to run (PowerShell)
+- Just run:
+```powershell
+python c:\Users\camjh\Downloads\extracted_files\state_loader_no_imports.py
+```
+It will print the number of rows loaded and show the first 5 State objects.
+
+Next adjustments you might want
+- Convert the `date` column to an integer or a (year,month,day) tuple if you want to compare dates numerically.
+- Filter or group by `state` code and print aggregates (e.g., latest positive counts).
+- Add a lightweight test that asserts expected counts/fields from the CSV.
+Which of these would you like me to implement next?
+
+Made changes.
+
+hoodca: This output is messy, is there anyway to make the user ask for a state code then display the attributes for each state?
+
+GitHub Copilot: Why/what/outcome: I'll update the todo list to add an interactive prompt task (in-progress), then edit `state_loader_no_imports.py` to prompt the user for a state code (or 'all'/'quit'), group State objects by state code, sort by date when possible, and display each object's attributes. Expected outcome: running the script auto-loads the CSV and then lets the user type a state code to see attributes for that state's rows. I'll update the todo list first. 
+
+Created 5 todos
+
+I'll modify `state_loader_no_imports.py` to group loaded State objects by their `state` attribute, then enter a loop that prompts the user to enter a 2-letter state code (or 'all'/'quit'). The script will display attributes for each State for that code, sorted by `date` when present. This keeps everything import-free. I'll apply the patch now. 
+
+Using "Apply Patch"
+
+
+```
+
+```
+Done — I updated `state_loader_no_imports.py` to add interactive querying by state code.
+
+What's new
+- After auto-loading the CSV, the script now:
+  - Builds a `groups` dictionary mapping uppercase state codes -> list of `State` objects.
+  - Attempts to sort each group's rows by the `date` attribute when available.
+  - Enters an interactive loop where the user can:
+    - Type a 2-letter state code (case-insensitive) to display all attributes for that state's rows.
+    - Type "all" to list available state codes and their row counts.
+    - Type "quit" or "exit" to leave.
+
+How to use
+- Run in PowerShell:
+```powershell
+python c:\Users\camjh\Downloads\extracted_files\state_loader_no_imports.py
+```
+- At the prompt:
+  - Enter a state code like: NY
+  - Or type: all
+  - Or type: quit
+
+Notes and limitations
+- The script still uses no imports internally.
+- Date sorting uses the `date` attribute as-is (often integers like YYYYMMDD). If your `date` values are strings, the sort might not behave as expected; if dates are in YYYYMMDD numeric form (or were converted to int by the loader), sorting should be chronological.
+- Output prints all attributes for each row. For large states with many rows this will be long — we can add paging (e.g., show N rows at a time) if you like.
+
+Next steps I can take
+- Add paging (show 10 rows at a time with next/prev commands).
+- Add a 'latest' shortcut to show only the most recent row for a state.
+- Convert `date` to int automatically for consistent sorting.
+Which would you like next?
+
+Made changes.
